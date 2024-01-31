@@ -4,7 +4,7 @@ use crate::ui::Ui;
 
 use super::consts::UI_MESSAGE;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct MessageDispatcher {
     hwnd: HWND,
 }

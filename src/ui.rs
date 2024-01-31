@@ -1,7 +1,7 @@
 
 
 
-pub trait Ui {
+pub trait Ui: Clone + Send {
     fn dispatch_message(&self, message: Message);
 }
 

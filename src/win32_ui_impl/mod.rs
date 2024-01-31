@@ -1,6 +1,6 @@
-use std::{mem, ptr};
+use std::mem;
 
-use windows_sys::Win32::{Foundation::HWND, Graphics::Gdi::UpdateWindow, System::LibraryLoader::GetModuleHandleW, UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, IsDialogMessageW, SendMessageW, SetWindowLongPtrW, ShowWindow, TranslateMessage, GWLP_USERDATA, MSG, SW_SHOW}};
+use windows_sys::Win32::{Foundation::HWND, Graphics::Gdi::UpdateWindow, UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, IsDialogMessageW, SendMessageW, ShowWindow, TranslateMessage, MSG, SW_SHOW}};
 
 use crate::win32_ui_impl::status_bar::StatusBar;
 

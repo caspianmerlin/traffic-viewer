@@ -11,7 +11,7 @@ pub const INIT_MESSAGE: u32 = WM_APP + 17;
 pub const MAIN_DIALOG_CLASS_NAME: *const u16 = w!("TRAFFIC_VIEWER_MAIN_DIALOG_CLASS");
 
 pub const RES_MAIN_DIALOG: u32 = 16;
-pub const RES_ABOUT_DIALOG: u32 = 16;
+pub const RES_ABOUT_DIALOG: u32 = 17;
 
 pub const RES_CALLSIGN_EDITTEXT: u32 = 202;
 pub const RES_SYNC_WITH_ES_CHECKBOX: u32 = 211;

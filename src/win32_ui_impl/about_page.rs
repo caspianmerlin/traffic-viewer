@@ -1,6 +1,6 @@
-use windows_sys::Win32::UI::{Controls::EM_SETREADONLY, WindowsAndMessaging::{EndDialog, GetDlgItem, SendMessageW}};
+use windows_sys::Win32::UI::{Controls::EM_SETREADONLY, WindowsAndMessaging::{DialogBoxParamW, EndDialog, GetDlgItem, SendMessageW, WM_CLOSE, WM_COMMAND, WM_INITDIALOG}};
 
-use super::consts::{RES_ABOUT_DIALOG_CREDITS_EDITTEXT, RES_ABOUT_DLG_OK_PUSHBUTTON};
+use super::{consts::{RES_ABOUT_DIALOG, RES_ABOUT_DIALOG_CREDITS_EDITTEXT, RES_ABOUT_DLG_OK_PUSHBUTTON}, util};
 
 
 
@@ -27,4 +27,8 @@ unsafe extern "system" fn about_dialog_proc(hwnd: isize, msg: u32, wparam: usize
 
         _ => return 0,
     }
+}
+
+pub unsafe fn show_about_window(hinst: isize, main_hwnd: isize) {
+    DialogBoxParamW(hinst, util::make_int_resource(RES_ABOUT_DIALOG), main_hwnd, Some(about_dialog_proc), 0);
 }

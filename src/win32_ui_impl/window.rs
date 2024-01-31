@@ -1,10 +1,10 @@
 use std::{mem, ptr};
 
-use windows_sys::{w, Win32::{Foundation::{HWND, RECT}, Graphics::Gdi::{GetSysColorBrush, COLOR_3DFACE}, System::LibraryLoader::GetModuleHandleW, UI::{Controls::DRAWITEMSTRUCT, WindowsAndMessaging::{CreateDialogParamW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassExW, SetWindowLongPtrW, SetWindowPos, CW_USEDEFAULT, DLGWINDOWEXTRA, GWLP_USERDATA, IDC_ARROW, SWP_NOSIZE, SWP_NOZORDER, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DRAWITEM, WM_NCCREATE, WNDCLASSEXW}}}};
+use windows_sys::{w, Win32::{Foundation::{HWND, RECT}, Graphics::Gdi::{GetSysColorBrush, COLOR_3DFACE}, System::LibraryLoader::GetModuleHandleW, UI::{Controls::DRAWITEMSTRUCT, WindowsAndMessaging::{CreateDialogParamW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassExW, SendMessageW, SetWindowLongPtrW, SetWindowPos, CW_USEDEFAULT, DLGWINDOWEXTRA, GWLP_USERDATA, IDC_ARROW, SWP_NOSIZE, SWP_NOZORDER, WM_CLOSE, WM_CREATE, WM_COMMAND, WM_DESTROY, WM_DRAWITEM, WM_NCCREATE, WNDCLASSEXW}}}};
 
 use crate::win32_ui_impl::{consts::{MAIN_DIALOG_CLASS_NAME, RES_MAIN_DIALOG, RES_MENU_MAIN}, util};
 
-use super::{consts::INIT_MESSAGE, Win32Ui};
+use super::{about_page, consts::{INIT_MESSAGE, RES_MENU_MAIN_FILE_EXIT, RES_MENU_MAIN_HELP_ABOUT, RES_SYNC_WITH_ES_CHECKBOX}, Win32Ui};
 
 pub unsafe fn setup_window(hinst: isize) -> Result<HWND, String> {
     register_window_class(hinst)?;
@@ -75,7 +75,39 @@ unsafe extern "system" fn wnd_proc(hwnd: isize, msg: u32, wparam: usize, lparam:
                 1
             };
         },
+
+
+        WM_COMMAND => {
+            
+            let (hi, lo) = util::split_words(wparam as u32);
+            if hi == 0 {
+                match lo as u32 {
+                    RES_MENU_MAIN_FILE_EXIT => {
+                        SendMessageW(hwnd, WM_CLOSE, 0, 0);
+                        return 0;
+                    },
+                    RES_MENU_MAIN_HELP_ABOUT => {
+                        let ui = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui);
+                        about_page::show_about_window(ui.hinst, hwnd);
+                        return 0;
+                    },
+                    RES_SYNC_WITH_ES_CHECKBOX => {
+                        let ui = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui);
+                        let checked = ui.main_page.get_sync_with_es_checkbox();
+                        ui.main_page.set_callsign_input_enabled(!checked);
+                        if !checked {
+                            ui.main_page.select_all_callsign_input_text();
+                            ui.main_page.set_callsign_input_focused();
+                        }
+                        return 0;
+                    },
+                    _ => return DefWindowProcW(hwnd, msg, wparam, lparam),
+                }
+            }
+             else { return DefWindowProcW(hwnd, msg, wparam, lparam); }
+        },
+
+
         _ => return DefWindowProcW(hwnd, msg, wparam, lparam),
-        
     }
 }
