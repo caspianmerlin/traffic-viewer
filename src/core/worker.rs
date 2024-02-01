@@ -53,7 +53,7 @@ pub fn worker_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, prefere
                 }
                 // Aircraft
    
-                if let Ok(aircraft_list) = fsuipc::get_aircraft(true).and_then(|ground_aircraft| fsuipc::get_aircraft(true).map(|airborne_aircraft| ground_aircraft.into_iter().chain(airborne_aircraft.into_iter()))) {
+                if let Ok(aircraft_list) = fsuipc::get_aircraft(true).and_then(|ground_aircraft| fsuipc::get_aircraft(false).map(|airborne_aircraft| ground_aircraft.into_iter().chain(airborne_aircraft.into_iter()))) {
                     for tcas_data in aircraft_list {
                         let callsign = CStr::from_bytes_until_nul(&tcas_data.atc_id).unwrap();
                         let callsign = match callsign.to_str() {
@@ -113,11 +113,14 @@ pub fn worker_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, prefere
                     };
                     let (pos_rep, fp_update) = match vatsim_details {
                         None => {
-                            let pos_rep = PilotPositionUpdateMessage::new(my_callsign, TransponderMode::ModeC, TransponderCode::try_from(2000).unwrap(), PilotRating::Student, own_aircraft_data.lat, own_aircraft_data.lon, own_aircraft_data.alt, own_aircraft_data.alt, own_aircraft_data.gs as u32, 0.0, 0.0, own_aircraft_data.true_hdg, false);
+                            let alt_diff = ((own_aircraft_data.local_qnh_in_hg - 29.92).mul(100.0).round().div(100.0) * 1000.0) as f64;
+                            //println!("True: {}", own_aircraft_data.alt);
+                            //println!("Press: {}", own_aircraft_data.alt - alt_diff);
+                            let pos_rep = PilotPositionUpdateMessage::new(my_callsign, TransponderMode::ModeC, TransponderCode::try_from(2000).unwrap(), PilotRating::Student, own_aircraft_data.lat, own_aircraft_data.lon, own_aircraft_data.alt, own_aircraft_data.alt - alt_diff, own_aircraft_data.gs as u32, 0.0, 0.0, own_aircraft_data.true_hdg, false);
                             (pos_rep, None)
                         },
                         Some((details, flight_plan)) => {
-                            let alt_diff = ((details.qnh_i_hg - 29.92).mul(100.0).round().div(100.0) * 1000.0) as f64;
+                            let alt_diff = ((own_aircraft_data.local_qnh_in_hg - 29.92).mul(100.0).round().div(100.0) * 1000.0) as f64;
                             let position = PilotPositionUpdateMessage::new(my_callsign.clone(), TransponderMode::ModeC, TransponderCode::try_from(details.transponder.parse::<u16>().unwrap_or_default()).unwrap_or(TransponderCode::try_from(2000).unwrap()), PilotRating::Student, own_aircraft_data.lat, own_aircraft_data.lon, own_aircraft_data.alt, own_aircraft_data.alt - alt_diff, own_aircraft_data.gs as u32, 0.0, 0.0, own_aircraft_data.true_hdg, false);
                             let flight_plan = flight_plan.map(|fp| fsd_interface::FlightPlan::from(fp));
                             let fp_update = flight_plan.map(|fp| FlightPlanMessage::new(FLIGHT_PLAN_RECIPIENT, my_callsign, fp));
