@@ -1,4 +1,6 @@
-use std::{collections::HashMap, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}};
+use std::{collections::HashMap, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, time::Duration};
+
+use crate::ui::Message;
 
 
 const VATSIM_METARS_URL: &str = "https://metar.vatsim.net/metar.php?id=all";
@@ -35,7 +37,7 @@ impl MetarProvider {
 
     fn update_inner(&mut self) -> bool {
         let mut map = HashMap::new();
-        match ureq::get(VATSIM_METARS_URL).call().ok().and_then(|response| response.into_string().ok()) {
+        match ureq::get(VATSIM_METARS_URL).timeout(Duration::from_millis(500)).call().ok().and_then(|response| response.into_string().ok()) {
             Some(metar_file) => {
                 for line in metar_file.lines() {
                     let icao = match line.split_whitespace().next() {

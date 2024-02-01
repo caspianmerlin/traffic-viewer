@@ -2,9 +2,9 @@ use std::mem;
 
 use windows_sys::Win32::{Foundation::HWND, Graphics::Gdi::UpdateWindow, UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, IsDialogMessageW, SendMessageW, ShowWindow, TranslateMessage, MSG, SW_SHOW}};
 
-use crate::win32_ui_impl::status_bar::StatusBar;
+use crate::{core, win32_ui_impl::status_bar::StatusBar};
 
-use self::{consts::INIT_MESSAGE, main_page::MainPage};
+use self::{consts::INIT_MESSAGE, dispatcher::MessageDispatcher, main_page::MainPage};
 
 
 
@@ -21,17 +21,19 @@ mod about_page;
 pub struct Win32Ui {
     hinst: isize,
     main_hwnd: HWND,
+    app: core::App<MessageDispatcher>,
     status_bar: StatusBar,
     main_page: MainPage,
 }
 
 impl Win32Ui {
-    pub unsafe fn new(hinst: isize, main_hwnd: isize) -> Win32Ui {
+    pub unsafe fn new(hinst: isize, main_hwnd: isize, app: core::App<MessageDispatcher>) -> Win32Ui {
         let status_bar = StatusBar::new();
         let main_page = MainPage::new();
         Win32Ui {
             hinst,
             main_hwnd,
+            app,
             status_bar,
             main_page,
         } 

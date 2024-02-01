@@ -1,5 +1,5 @@
 
-use std::{collections::HashMap, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}};
+use std::{collections::HashMap, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, time::Duration};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -31,7 +31,7 @@ impl VatsimDataProvider {
     }
 
     fn update_inner(&mut self) -> bool {
-        let res = match ureq::get(VATSIM_DATA_URL).call() {
+        let res = match ureq::get(VATSIM_DATA_URL).timeout(Duration::from_secs(1)).call() {
             Ok(res) => res,
             Err(_) => return false,
         };

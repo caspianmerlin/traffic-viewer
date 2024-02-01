@@ -6,6 +6,23 @@ pub trait Ui: Clone + Send {
 }
 
 
+
+
 pub enum Message {
+
+    MsfsConnected,
+    MsfsDisconnected,
+
+    EuroscopeConnected(String),
+    EuroscopeDisconnected,
+    
+    MetarsRetrieved,
+    MetarsDisconnected,
+
+    MetarNotFound,
+    MetarRetrieved(String),
+
+    VatsimDataRetrieved,
+    VatsimDataDisconnected,
 
 }

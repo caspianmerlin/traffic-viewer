@@ -1,34 +1,32 @@
 use windows_sys::Win32::{Foundation::GetLastError, UI::{Controls::{CheckDlgButton, IsDlgButtonChecked, BST_CHECKED, BST_UNCHECKED, EM_SETLIMITTEXT, EM_SETSEL}, Input::KeyboardAndMouse::{EnableWindow, SetFocus}, WindowsAndMessaging::{GetDlgItem, GetWindowLongPtrW, SendMessageW, SetWindowLongPtrW, ES_UPPERCASE, GWL_STYLE, WM_GETTEXT, WM_GETTEXTLENGTH, WM_SETTEXT}}};
 
-use super::{consts::{RES_CALLSIGN_EDITTEXT, RES_FETCH_FPS_FROM_VS_CHECKBOX, RES_FETCH_METARS_FROM_VS_CHECKBOX, RES_FETCH_METAR_PUSHBUTTON, RES_METAR_STATION_EDITTEXT, RES_ONLY_SHOW_VS_AC_CHECKBOX, RES_SYNC_WITH_ES_CHECKBOX}, util};
+use super::{consts::{RES_CALLSIGN_EDITTEXT, RES_FETCH_FPS_FROM_VS_CHECKBOX, RES_FETCH_METARS_FROM_VS_CHECKBOX, RES_FETCH_METAR_PUSHBUTTON, RES_METAR_STATION_EDITTEXT, RES_METAR_TEXT, RES_ONLY_SHOW_VS_AC_CHECKBOX, RES_SYNC_WITH_ES_CHECKBOX}, util};
 
 
 
 
 pub struct MainPage {
     main_hwnd: isize,
-    euroscope_callsign: Option<String>,
-
+    pub euroscope_callsign: Option<String>,
     callsign_input_hwnd: isize,
     metar_station_input_hwnd: isize,
+    metar_text: isize,
     fetch_metar_pushbutton_hwnd: isize,
 }
 impl MainPage {
     pub unsafe fn new() -> MainPage {
         
-        MainPage { main_hwnd: 0, euroscope_callsign: None, callsign_input_hwnd: 0, metar_station_input_hwnd: 0, fetch_metar_pushbutton_hwnd: 0 }
+        MainPage { main_hwnd: 0, euroscope_callsign: None, callsign_input_hwnd: 0, metar_station_input_hwnd: 0, metar_text: 0, fetch_metar_pushbutton_hwnd: 0 }
         
         
 
     }
 
     pub unsafe fn init(&mut self, main_hwnd: isize) {
-        println!("Main hwnd: {}", main_hwnd);
         self.main_hwnd = main_hwnd;
         self.callsign_input_hwnd = GetDlgItem(main_hwnd, RES_CALLSIGN_EDITTEXT as i32);
-        println!("Err: {}", GetLastError());
-        println!("CS: {}", self.callsign_input_hwnd);
         self.metar_station_input_hwnd = GetDlgItem(main_hwnd, RES_METAR_STATION_EDITTEXT as i32);
+        self.metar_text = GetDlgItem(main_hwnd, RES_METAR_TEXT as i32);
         self.fetch_metar_pushbutton_hwnd = GetDlgItem(main_hwnd, RES_FETCH_METAR_PUSHBUTTON as i32);
 
 
@@ -43,7 +41,7 @@ impl MainPage {
 
         // Set initial UI control state
         self.set_callsign_input_enabled(false);
-        self.set_callsign_input_text("EZY1234");
+        self.set_callsign_input_text("");
         
         self.set_sync_with_es_checkbox(true);
         self.set_fetch_flight_plans_checkbox(true);
@@ -51,7 +49,7 @@ impl MainPage {
         self.set_only_show_vs_ac_checkbox(true);
 
         self.set_metar_station_input_enabled(false);
-        self.set_metar_station_input_text("EGKK");
+        self.set_metar_station_input_text("");
         self.set_metar_button_enabled(false);
     }
     
@@ -61,8 +59,13 @@ impl MainPage {
     pub unsafe fn select_all_callsign_input_text(&mut self) {
         self.text_edit_select_all_text(self.callsign_input_hwnd);
     }
-    pub unsafe fn select_all_metar_station_input_text(mut self) {
+    pub unsafe fn select_all_metar_station_input_text(&mut self) {
         self.text_edit_select_all_text(self.metar_station_input_hwnd);
+    }
+
+    pub unsafe fn set_metar_text(&mut self, text: &str) {
+        let text = util::wide_null(text);
+        SendMessageW(self.metar_text, WM_SETTEXT, 0, text.as_ptr() as isize);
     }
 
     pub unsafe fn set_metar_button_enabled(&mut self, enabled: bool) {

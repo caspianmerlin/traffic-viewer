@@ -1,10 +1,10 @@
 use std::{mem, ptr};
 
-use windows_sys::{w, Win32::{Foundation::{HWND, RECT}, Graphics::Gdi::{GetSysColorBrush, COLOR_3DFACE}, System::LibraryLoader::GetModuleHandleW, UI::{Controls::DRAWITEMSTRUCT, WindowsAndMessaging::{CreateDialogParamW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassExW, SendMessageW, SetWindowLongPtrW, SetWindowPos, CW_USEDEFAULT, DLGWINDOWEXTRA, GWLP_USERDATA, IDC_ARROW, SWP_NOSIZE, SWP_NOZORDER, WM_CLOSE, WM_CREATE, WM_COMMAND, WM_DESTROY, WM_DRAWITEM, WM_NCCREATE, WNDCLASSEXW}}}};
+use windows_sys::{w, Win32::{Foundation::{HWND, RECT}, Graphics::Gdi::{GetSysColorBrush, COLOR_3DFACE}, System::LibraryLoader::GetModuleHandleW, UI::{Controls::DRAWITEMSTRUCT, Input::KeyboardAndMouse::GetFocus, WindowsAndMessaging::{CreateDialogParamW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetDlgItem, GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassExW, SendMessageW, SetWindowLongPtrW, SetWindowPos, BM_CLICK, CW_USEDEFAULT, DLGWINDOWEXTRA, GWLP_USERDATA, IDC_ARROW, IDOK, SWP_NOSIZE, SWP_NOZORDER, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_DRAWITEM, WM_NCCREATE, WNDCLASSEXW}}}};
 
-use crate::win32_ui_impl::{consts::{MAIN_DIALOG_CLASS_NAME, RES_MAIN_DIALOG, RES_MENU_MAIN}, util};
+use crate::{core::{App, Preferences}, win32_ui_impl::{consts::{MAIN_DIALOG_CLASS_NAME, RES_MAIN_DIALOG, RES_MENU_MAIN}, util}};
 
-use super::{about_page, consts::{INIT_MESSAGE, RES_MENU_MAIN_FILE_EXIT, RES_MENU_MAIN_HELP_ABOUT, RES_SYNC_WITH_ES_CHECKBOX}, Win32Ui};
+use super::{about_page, consts::{INIT_MESSAGE, RES_FETCH_METAR_PUSHBUTTON, RES_MENU_MAIN_FILE_EXIT, RES_MENU_MAIN_HELP_ABOUT, RES_METAR_STATION_EDITTEXT, RES_SYNC_WITH_ES_CHECKBOX, UI_MESSAGE}, dispatcher::{MessageDispatcher, UiMessage}, Win32Ui};
 
 pub unsafe fn setup_window(hinst: isize) -> Result<HWND, String> {
     register_window_class(hinst)?;
@@ -41,13 +41,12 @@ unsafe fn create_main_window(hinst: isize) -> Result<HWND, String> {
 unsafe extern "system" fn wnd_proc(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize {
     match msg {
         WM_NCCREATE => {
-            let ui_boxed = Box::into_raw(Box::new(Win32Ui::new(GetModuleHandleW(ptr::null()), hwnd)));
+            let app = App::new(Preferences::new(true, true, true, true), MessageDispatcher::new(hwnd));
+            let ui_boxed = Box::into_raw(Box::new(Win32Ui::new(GetModuleHandleW(ptr::null()), hwnd, app)));
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, ui_boxed as isize);
             return DefWindowProcW(hwnd, msg, wparam, lparam);
         },
         WM_CREATE => {
-            
-
             let dummy_hwnd = CreateWindowExW(0, w!("STATIC"), w!("STATIC"), 0, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, 0, 0, GetModuleHandleW(ptr::null()), ptr::null());
             let mut rect: RECT = mem::zeroed();
             GetWindowRect(dummy_hwnd, &mut rect);
@@ -61,7 +60,61 @@ unsafe extern "system" fn wnd_proc(hwnd: isize, msg: u32, wparam: usize, lparam:
             ui.init(ui.hinst, hwnd);
             0
         },
+        UI_MESSAGE => {
+            let ui = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui);
+            let message_type: UiMessage = mem::transmute(wparam);
+            match message_type {
+                UiMessage::MsfsConnected => ui.status_bar.set_msfs_connected(true),
+                UiMessage::MsfsDisconnected => ui.status_bar.set_msfs_connected(false),
+                UiMessage::EuroscopeConnected => {
+                    let es_callsign = *Box::from_raw(lparam as *mut String);
+                    ui.main_page.euroscope_callsign = Some(es_callsign.clone());
+                    if ui.main_page.get_sync_with_es_checkbox() {
+                        ui.main_page.set_callsign_input_text(&es_callsign);
+                    }
+                    ui.status_bar.set_euroscope_connected(true);
+                }
+                UiMessage::EuroscopeDisconnected => {
+                    ui.main_page.euroscope_callsign = None;
+                    if ui.main_page.get_sync_with_es_checkbox() {
+                        ui.main_page.set_callsign_input_text("");
+                    }
+                    ui.status_bar.set_euroscope_connected(false);
+                }
+                UiMessage::MetarsRetrieved => {
+                    ui.status_bar.set_metars_connected(true);
+                    ui.main_page.set_metar_button_enabled(true);
+                    ui.main_page.set_metar_station_input_enabled(true);
+                    ui.main_page.set_metar_station_input_text("");
+                },
+                    
+                   
+                UiMessage::MetarsDisconnected => {
+                    ui.status_bar.set_metars_connected(false);
+                    ui.main_page.set_metar_button_enabled(false);
+                    ui.main_page.set_metar_station_input_text("");
+                    ui.main_page.set_metar_station_input_enabled(false);
+                    ui.main_page.set_metar_text("");
+                    
+                },
+                UiMessage::VatsimDataRetrieved => ui.status_bar.set_vatsim_connected(true),
+                UiMessage::VatsimDataDisconnected => ui.status_bar.set_vatsim_connected(false),
+
+                UiMessage::MetarRetrieved => {
+                    let metar = *Box::from_raw(lparam as *mut String);
+                    ui.main_page.set_metar_text(&metar);
+                },
+                UiMessage::MetarNotFound => {
+                    ui.main_page.set_metar_text("METAR not found");
+                }
+                _ => {},
+            }
+            0
+        }
         WM_DESTROY => {
+            let ui = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui;
+            let ui_box = Box::from_raw(ui);
+            drop(ui_box);
             PostQuitMessage(0);
             0
         },
@@ -96,11 +149,37 @@ unsafe extern "system" fn wnd_proc(hwnd: isize, msg: u32, wparam: usize, lparam:
                         let checked = ui.main_page.get_sync_with_es_checkbox();
                         ui.main_page.set_callsign_input_enabled(!checked);
                         if !checked {
-                            ui.main_page.select_all_callsign_input_text();
+                            ui.main_page.set_callsign_input_text("");
                             ui.main_page.set_callsign_input_focused();
+                        } else {
+                            if let Some(es_callsign) = ui.main_page.euroscope_callsign.clone() {
+                                ui.main_page.set_callsign_input_text(&es_callsign);
+                            } else {
+                                ui.main_page.set_callsign_input_text("");
+                            }
                         }
                         return 0;
                     },
+                    RES_FETCH_METAR_PUSHBUTTON => {
+                        let ui = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui);
+                        let station = ui.main_page.get_metar_station_input_text();
+                        if station.is_empty() { 
+                            ui.main_page.set_metar_station_input_focused();
+                            return 0;
+                        }
+                        ui.app.try_lookup_metar(station);
+                        ui.main_page.select_all_metar_station_input_text();
+                        ui.main_page.set_metar_station_input_focused();
+                        return 0;
+                    },
+                    1 => {
+                        let metar_input = GetDlgItem(hwnd, RES_METAR_STATION_EDITTEXT as i32);
+                        if GetFocus() == metar_input {
+                            SendMessageW(GetDlgItem(hwnd, RES_FETCH_METAR_PUSHBUTTON as i32), BM_CLICK, 0, 0);
+                            return 0;
+                        }
+                        return DefWindowProcW(hwnd, msg, wparam, lparam);
+                    }
                     _ => return DefWindowProcW(hwnd, msg, wparam, lparam),
                 }
             }

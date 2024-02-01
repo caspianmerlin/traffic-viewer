@@ -29,7 +29,6 @@ impl StatusBar {
     }
 
     pub unsafe fn init(&mut self, hinst: isize, parent_hwnd: isize) {
-        println!("There");
         // Create status bar HWND
         self.hwnd = CreateWindowExW(0, STATUSCLASSNAME, ptr::null(), WS_CHILD | WS_VISIBLE , 0, 0, 0, 0, parent_hwnd, 0, hinst, ptr::null());
         // Figure out how wide each section is going to be and set up the status bar accordingly
@@ -45,8 +44,7 @@ impl StatusBar {
         self.vatsim.init(self.hwnd);
     }
 
-    pub unsafe fn 
-    draw(&mut self, draw_item_struct: &DRAWITEMSTRUCT) -> bool {
+    pub unsafe fn draw(&mut self, draw_item_struct: &DRAWITEMSTRUCT) -> bool {
 
         if draw_item_struct.hwndItem != self.hwnd { return false; }
         match draw_item_struct.itemID {
@@ -58,6 +56,19 @@ impl StatusBar {
         }
 
         return true;
+    }
+
+    pub unsafe fn set_euroscope_connected(&mut self, connected: bool) {
+        self.euroscope.set_connected(connected);
+    }
+    pub unsafe fn set_msfs_connected(&mut self, connected: bool) {
+        self.msfs.set_connected(connected);
+    }
+    pub unsafe fn set_metars_connected(&mut self, connected: bool) {
+        self.metars.set_connected(connected);
+    }
+    pub unsafe fn set_vatsim_connected(&mut self, connected: bool) {
+        self.vatsim.set_connected(connected);
     }
 }
 
@@ -102,5 +113,11 @@ impl Section {
         let old_font = SelectObject(draw_item_struct.hDC, font);
         DrawTextW(draw_item_struct.hDC, self.text, -1, &mut local_rect, DT_VCENTER | DT_SINGLELINE);
         SelectObject(draw_item_struct.hDC, old_font);
+    }
+    pub unsafe fn set_connected(&mut self, connected: bool) {
+        if connected != self.connected {
+            self.connected = connected;
+            SendMessageW(self.parent_hwnd, SB_SETTEXT, (SBT_OWNERDRAW | self.id) as usize, 0);
+        }
     }
 }

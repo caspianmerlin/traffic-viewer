@@ -2,7 +2,7 @@ use std::{io::{BufRead, BufReader, ErrorKind, LineWriter, Write}, net::{TcpListe
 
 use fsd_interface::{messages::{MetarResponseMessage, TextMessage}, FsdMessageType};
 
-use crate::ui::Ui;
+use crate::ui::{Message, Ui};
 
 use super::{metar::MetarProvider, vatsim::VatsimDataProvider, Preferences};
 
@@ -16,7 +16,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new<U: Ui>(preferences: Preferences, vatsim_data_provider: VatsimDataProvider, metar_provider: MetarProvider, ui: U, should_terminate: Arc<AtomicBool>) -> Server {
+    pub fn new<U: Ui + 'static>(preferences: Preferences, vatsim_data_provider: VatsimDataProvider, metar_provider: MetarProvider, ui: U, should_terminate: Arc<AtomicBool>) -> Server {
         let u = ui.clone();
         let (tx, rx) = mpsc::channel();
         let thread = Some(server_thread(Arc::clone(&should_terminate), vatsim_data_provider, metar_provider, preferences, u, rx));
@@ -31,6 +31,10 @@ impl Server {
         self.sender.send(message);
     }
 
+    pub fn sender(&self) -> Sender<String> {
+        self.sender.clone()
+    }
+
 }
 impl Drop for Server {
     fn drop(&mut self) {
@@ -41,28 +45,37 @@ impl Drop for Server {
     }
 }
 
-fn server_thread<U: Ui>(should_terminate: Arc<AtomicBool>, vatsim_data_provider: VatsimDataProvider, metar_provider: MetarProvider, preferences: Preferences, ui: U, receiver: Receiver<String>) -> JoinHandle<()> {
+fn server_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, vatsim_data_provider: VatsimDataProvider, metar_provider: MetarProvider, preferences: Preferences, ui: U, receiver: Receiver<String>) -> JoinHandle<()> {
     thread::Builder::new().name("TrafficViewerFSDThread".into()).spawn(move|| {
 
         let tcp_listener = TcpListener::bind("127.0.0.1:6809").unwrap();
-        tcp_listener.set_nonblocking(true);
-        while !should_terminate.load(Ordering::Relaxed) { 
+        while !should_terminate.load(Ordering::Relaxed) {
+            tcp_listener.set_nonblocking(true).ok();
             match tcp_listener.accept() {
                 Ok((stream, _)) => {
+                    stream.set_nonblocking(false).ok();
                     let mut writer = LineWriter::new(stream.try_clone().unwrap());
-
+                    while let Ok(_) = receiver.try_recv() {}
+                    let this_connection_ended = Arc::new(AtomicBool::new(false));
                     // Spawn recv thread
-                    let recv_thread = recv_thread(Arc::clone(&should_terminate), stream, vatsim_data_provider.clone(), metar_provider.clone(), preferences.clone(), ui);
-                    while !should_terminate.load(Ordering::Relaxed) {
+                    let recv_thread = recv_thread(Arc::clone(&should_terminate), Arc::clone(&this_connection_ended), stream, vatsim_data_provider.clone(), metar_provider.clone(), preferences.clone(), ui.clone());
+                    while !should_terminate.load(Ordering::Relaxed) && !this_connection_ended.load(Ordering::Relaxed) {
                         match receiver.try_recv() {
-                            Ok(msg) => _ = writer.write(&string_to_byte_slice(&msg)).ok(),
-                            Err(TryRecvError::Disconnected) => break,
+                            Ok(msg) => _ = {
+                                writer.write(&string_to_byte_slice(&msg)).ok();
+                            },
+                            Err(TryRecvError::Disconnected) => {
+                                break;
+                            },
                             Err(TryRecvError::Empty) => {
                                 thread::sleep(Duration::from_millis(100));
                                 continue;
                             }
                         }
+
                     }
+                    writer.get_ref().set_nonblocking(true).ok();
+                    writer.get_ref().shutdown(std::net::Shutdown::Both).ok();
                     recv_thread.join().unwrap();
                 },
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
@@ -77,7 +90,8 @@ fn server_thread<U: Ui>(should_terminate: Arc<AtomicBool>, vatsim_data_provider:
 }
 
 
-fn recv_thread<U: Ui>(should_terminate: Arc<AtomicBool>, tcp_stream: TcpStream, vatsim_data_provider: VatsimDataProvider, metar_provider: MetarProvider, preferences: Preferences, ui: U) -> JoinHandle<()> {
+fn recv_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, this_connection_closed: Arc<AtomicBool>, tcp_stream: TcpStream, vatsim_data_provider: VatsimDataProvider, metar_provider: MetarProvider, mut preferences: Preferences, ui: U) -> JoinHandle<()> {
+    preferences.set_es_callsign(String::new());
     thread::Builder::new().name(String::from("TrafficViewerFSDRecvThread")).spawn(move|| {
         let mut writer = LineWriter::new(tcp_stream.try_clone().unwrap());
         let mut reader = BufReader::new(tcp_stream);
@@ -86,28 +100,31 @@ fn recv_thread<U: Ui>(should_terminate: Arc<AtomicBool>, tcp_stream: TcpStream, 
             let mut buffer = Vec::with_capacity(512);
             match reader.read_until(b'\n', &mut buffer) {
                 Ok(0) => {
-                    println!("Connection to controller client ended");
+                    ui.dispatch_message(Message::EuroscopeDisconnected);
+                    this_connection_closed.store(true, Ordering::Relaxed);
                     break;
                 },
                 Ok(_) => {
                     let message = byte_slice_to_string(&buffer);
-                    println!("RECV: {}", message.trim());
                     if let Ok(fsd_message) = fsd_interface::parse_message(message.trim()) {
                         match fsd_message {
                             FsdMessageType::AtcRegisterMessage(msg) => {
-                                writer.write(&string_to_byte_slice(&TextMessage::new(SERVER_CALLSIGN, msg.from, WELCOME_MESSAGE).to_string())).ok();
+                                preferences.set_es_callsign(msg.from.clone());
+                                ui.dispatch_message(Message::EuroscopeConnected(msg.from.clone()));
+                                let res = writer.write(&string_to_byte_slice(&format!("{}\r\n", TextMessage::new(SERVER_CALLSIGN, msg.from, WELCOME_MESSAGE))));
                             },
                             FsdMessageType::MetarRequestMessage(msg) => {
                                 if let Some(metar) = metar_provider.lookup_metar(&msg.station) {
-                                    writer.write(&string_to_byte_slice(&MetarResponseMessage::new(SERVER_CALLSIGN, msg.from, metar).to_string())).ok();
+                                    writer.write(&string_to_byte_slice(&format!("{}\r\n", MetarResponseMessage::new(SERVER_CALLSIGN, msg.from, metar)))).ok();
                                 }
                             }
                             _ => {},
                         }
                     }
                 },
-                Err(e) => {
-                    println!("{:?}", e);
+                Err(_) => {
+                    ui.dispatch_message(Message::EuroscopeDisconnected);
+                    this_connection_closed.store(true, Ordering::Relaxed);
                     break;
                 },
             }
