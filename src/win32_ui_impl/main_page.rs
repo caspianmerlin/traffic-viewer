@@ -1,4 +1,4 @@
-use windows_sys::Win32::{Foundation::GetLastError, UI::{Controls::{CheckDlgButton, IsDlgButtonChecked, BST_CHECKED, BST_UNCHECKED, EM_SETLIMITTEXT, EM_SETSEL}, Input::KeyboardAndMouse::{EnableWindow, SetFocus}, WindowsAndMessaging::{GetDlgItem, GetWindowLongPtrW, SendMessageW, SetWindowLongPtrW, ES_UPPERCASE, GWL_STYLE, WM_GETTEXT, WM_GETTEXTLENGTH, WM_SETTEXT}}};
+use windows_sys::Win32::{Foundation::GetLastError, UI::{Controls::{CheckDlgButton, IsDlgButtonChecked, BST_CHECKED, BST_UNCHECKED, EM_SETLIMITTEXT, EM_SETSEL}, Input::KeyboardAndMouse::{EnableWindow, IsWindowEnabled, SetFocus}, WindowsAndMessaging::{GetDlgItem, GetWindowLongPtrW, SendMessageW, SetWindowLongPtrW, ES_UPPERCASE, GWL_STYLE, WM_GETTEXT, WM_GETTEXTLENGTH, WM_SETTEXT}}};
 
 use super::{consts::{RES_CALLSIGN_EDITTEXT, RES_FETCH_FPS_FROM_VS_CHECKBOX, RES_FETCH_METARS_FROM_VS_CHECKBOX, RES_FETCH_METAR_PUSHBUTTON, RES_METAR_STATION_EDITTEXT, RES_METAR_TEXT, RES_ONLY_SHOW_VS_AC_CHECKBOX, RES_SYNC_WITH_ES_CHECKBOX}, util};
 
@@ -12,11 +12,12 @@ pub struct MainPage {
     metar_station_input_hwnd: isize,
     metar_text: isize,
     fetch_metar_pushbutton_hwnd: isize,
+    pub only_show_vatsim_aircraft_selected: bool,
 }
 impl MainPage {
     pub unsafe fn new() -> MainPage {
         
-        MainPage { main_hwnd: 0, euroscope_callsign: None, callsign_input_hwnd: 0, metar_station_input_hwnd: 0, metar_text: 0, fetch_metar_pushbutton_hwnd: 0 }
+        MainPage { main_hwnd: 0, euroscope_callsign: None, callsign_input_hwnd: 0, metar_station_input_hwnd: 0, metar_text: 0, fetch_metar_pushbutton_hwnd: 0, only_show_vatsim_aircraft_selected: true }
         
         
 
@@ -113,6 +114,39 @@ impl MainPage {
         IsDlgButtonChecked(self.main_hwnd, checkbox_id as i32) == 1
     }
 
+    unsafe fn set_checkbox_enabled(&mut self, checkbox_id: u32, enabled: bool) {
+        let enabled = if enabled { 1 } else { 0 };
+        EnableWindow(GetDlgItem(self.main_hwnd, checkbox_id as i32), enabled);
+    }
+    unsafe fn get_checkbox_enabled(&self, checkbox_id: u32) -> bool {
+        IsWindowEnabled(GetDlgItem(self.main_hwnd, checkbox_id as i32)) > 0
+    }
+    pub unsafe fn set_sync_with_es_checkbox_enabled(&mut self, enabled: bool) {
+        self.set_checkbox_enabled(RES_SYNC_WITH_ES_CHECKBOX, enabled);
+    }
+    pub unsafe fn set_fetch_metars_checkbox_enabled(&mut self, enabled: bool) {
+        self.set_checkbox_enabled(RES_FETCH_METARS_FROM_VS_CHECKBOX, enabled);
+    }
+    pub unsafe fn set_only_show_vs_ac_checkbox_enabled(&mut self, enabled: bool) {
+        self.set_checkbox_enabled(RES_ONLY_SHOW_VS_AC_CHECKBOX, enabled);
+    }
+    pub unsafe fn set_fetch_flight_plans_checkbox_enabled(&mut self, enabled: bool) {
+        self.set_checkbox_enabled(RES_FETCH_FPS_FROM_VS_CHECKBOX, enabled);
+    }
+    pub unsafe fn get_sync_with_es_checkbox_enabled(&self) -> bool {
+        self.get_checkbox_enabled(RES_SYNC_WITH_ES_CHECKBOX)
+    }
+    pub unsafe fn get_fetch_metars_checkbox_enabled(&self) -> bool {
+        self.get_checkbox_enabled(RES_FETCH_METARS_FROM_VS_CHECKBOX)
+    }
+    pub unsafe fn get_only_show_vs_ac_checkbox_enabled(&self) -> bool {
+        self.get_checkbox_enabled(RES_ONLY_SHOW_VS_AC_CHECKBOX)
+    }
+    pub unsafe fn get_sync_wset_fetch_flight_plans_checkbox_enabled(&self) -> bool {
+        self.get_checkbox_enabled(RES_FETCH_FPS_FROM_VS_CHECKBOX)
+    }
+
+
     pub unsafe fn set_callsign_input_enabled(&mut self, enabled: bool) {
         self.set_text_edit_enabled(self.callsign_input_hwnd, enabled);
     }
@@ -120,8 +154,8 @@ impl MainPage {
         self.set_text_edit_enabled(self.metar_station_input_hwnd, enabled);
     }
     unsafe fn set_text_edit_enabled(&mut self, text_edit_hwnd: isize, enabled: bool) {
-        let checked = if enabled { 1 } else { 0 };
-        EnableWindow(text_edit_hwnd, checked);
+        let enabled = if enabled { 1 } else { 0 };
+        EnableWindow(text_edit_hwnd, enabled);
     }
     unsafe fn set_text_edit_text(&mut self, text_edit_hwnd: isize, text: &str) {
         let text = util::wide_null(text);

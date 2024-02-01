@@ -1,10 +1,10 @@
 use std::{mem, ptr};
 
-use windows_sys::{w, Win32::{Foundation::{HWND, RECT}, Graphics::Gdi::{GetSysColorBrush, COLOR_3DFACE}, System::LibraryLoader::GetModuleHandleW, UI::{Controls::DRAWITEMSTRUCT, Input::KeyboardAndMouse::GetFocus, WindowsAndMessaging::{CreateDialogParamW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetDlgItem, GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassExW, SendMessageW, SetWindowLongPtrW, SetWindowPos, BM_CLICK, CW_USEDEFAULT, DLGWINDOWEXTRA, GWLP_USERDATA, IDC_ARROW, IDOK, SWP_NOSIZE, SWP_NOZORDER, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_DRAWITEM, WM_NCCREATE, WNDCLASSEXW}}}};
+use windows_sys::{w, Win32::{Foundation::{HWND, RECT}, Graphics::Gdi::{GetSysColorBrush, COLOR_3DFACE}, System::LibraryLoader::GetModuleHandleW, UI::{Controls::DRAWITEMSTRUCT, Input::KeyboardAndMouse::{GetFocus, IsWindowEnabled}, WindowsAndMessaging::{CreateDialogParamW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetDlgItem, GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassExW, SendMessageW, SetWindowLongPtrW, SetWindowPos, BM_CLICK, CW_USEDEFAULT, DLGWINDOWEXTRA, EN_CHANGE, GWLP_USERDATA, IDC_ARROW, IDOK, SWP_NOSIZE, SWP_NOZORDER, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_DRAWITEM, WM_NCCREATE, WNDCLASSEXW}}}};
 
 use crate::{core::{App, Preferences}, win32_ui_impl::{consts::{MAIN_DIALOG_CLASS_NAME, RES_MAIN_DIALOG, RES_MENU_MAIN}, util}};
 
-use super::{about_page, consts::{INIT_MESSAGE, RES_FETCH_METAR_PUSHBUTTON, RES_MENU_MAIN_FILE_EXIT, RES_MENU_MAIN_HELP_ABOUT, RES_METAR_STATION_EDITTEXT, RES_SYNC_WITH_ES_CHECKBOX, UI_MESSAGE}, dispatcher::{MessageDispatcher, UiMessage}, Win32Ui};
+use super::{about_page, consts::{INIT_MESSAGE, RES_FETCH_FPS_FROM_VS_CHECKBOX, RES_FETCH_METARS_FROM_VS_CHECKBOX, RES_FETCH_METAR_PUSHBUTTON, RES_MENU_MAIN_FILE_EXIT, RES_MENU_MAIN_HELP_ABOUT, RES_METAR_STATION_EDITTEXT, RES_CALLSIGN_EDITTEXT, RES_ONLY_SHOW_VS_AC_CHECKBOX, RES_SYNC_WITH_ES_CHECKBOX, UI_MESSAGE}, dispatcher::{MessageDispatcher, UiMessage}, Win32Ui};
 
 pub unsafe fn setup_window(hinst: isize) -> Result<HWND, String> {
     register_window_class(hinst)?;
@@ -147,6 +147,7 @@ unsafe extern "system" fn wnd_proc(hwnd: isize, msg: u32, wparam: usize, lparam:
                     RES_SYNC_WITH_ES_CHECKBOX => {
                         let ui = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui);
                         let checked = ui.main_page.get_sync_with_es_checkbox();
+                        ui.app.preferences.set_use_es_callsign(checked);
                         ui.main_page.set_callsign_input_enabled(!checked);
                         if !checked {
                             ui.main_page.set_callsign_input_text("");
@@ -172,6 +173,34 @@ unsafe extern "system" fn wnd_proc(hwnd: isize, msg: u32, wparam: usize, lparam:
                         ui.main_page.set_metar_station_input_focused();
                         return 0;
                     },
+                    RES_ONLY_SHOW_VS_AC_CHECKBOX => {
+                        let ui = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui);
+                        
+                        if ui.main_page.get_only_show_vs_ac_checkbox_enabled() {
+                            let checked = ui.main_page.get_only_show_vs_ac_checkbox();
+                            ui.main_page.only_show_vatsim_aircraft_selected = checked;
+                            ui.app.preferences.set_only_show_vatsim(checked);
+                        }
+                        return 0;
+                    }
+                    RES_FETCH_FPS_FROM_VS_CHECKBOX => {
+                        let ui = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui);
+                        let checked = ui.main_page.get_fetch_flight_plans_checkbox();
+                        ui.main_page.set_only_show_vs_ac_checkbox_enabled(checked);
+                        let only_show_vs_checked = if checked { ui.main_page.only_show_vatsim_aircraft_selected } else { false };
+                        ui.app.preferences.set_fetch_flight_plans(checked);
+                        ui.app.preferences.set_only_show_vatsim(only_show_vs_checked);
+                        ui.main_page.set_only_show_vs_ac_checkbox(only_show_vs_checked);
+
+                        return 0;
+                    }
+                    RES_FETCH_METARS_FROM_VS_CHECKBOX => {
+                        let ui = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui);
+                        let checked = ui.main_page.get_fetch_metars_checkbox();
+                        ui.app.preferences.set_fetch_metars(checked);
+                        return 0;
+                    },
+                    
                     1 => {
                         let metar_input = GetDlgItem(hwnd, RES_METAR_STATION_EDITTEXT as i32);
                         if GetFocus() == metar_input {
@@ -180,6 +209,18 @@ unsafe extern "system" fn wnd_proc(hwnd: isize, msg: u32, wparam: usize, lparam:
                         }
                         return DefWindowProcW(hwnd, msg, wparam, lparam);
                     }
+                    _ => return DefWindowProcW(hwnd, msg, wparam, lparam),
+                }
+            } else if hi == EN_CHANGE as u16 {
+                match lo as u32{
+                    RES_CALLSIGN_EDITTEXT => {
+                        let ui = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Win32Ui);
+                        if IsWindowEnabled(GetDlgItem(hwnd, RES_CALLSIGN_EDITTEXT as i32)) > 0 {
+                            let text = ui.main_page.get_callsign_input_text();
+                            ui.app.preferences.set_own_callsign(text);
+                        }
+                        return 0;
+                    },
                     _ => return DefWindowProcW(hwnd, msg, wparam, lparam),
                 }
             }

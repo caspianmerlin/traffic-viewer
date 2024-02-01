@@ -62,7 +62,7 @@ fn server_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, vatsim_data
                     while !should_terminate.load(Ordering::Relaxed) && !this_connection_ended.load(Ordering::Relaxed) {
                         match receiver.try_recv() {
                             Ok(msg) => _ = {
-                                writer.write(&string_to_byte_slice(&msg)).ok();
+                                writer.write(&string_to_byte_slice(&format!("{}\r\n", msg))).ok();
                             },
                             Err(TryRecvError::Disconnected) => {
                                 break;
@@ -95,6 +95,8 @@ fn recv_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, this_connecti
     thread::Builder::new().name(String::from("TrafficViewerFSDRecvThread")).spawn(move|| {
         let mut writer = LineWriter::new(tcp_stream.try_clone().unwrap());
         let mut reader = BufReader::new(tcp_stream);
+
+        
         
         while !should_terminate.load(Ordering::Relaxed) {
             let mut buffer = Vec::with_capacity(512);

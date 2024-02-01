@@ -1,6 +1,6 @@
 use std::{ffi::CStr, ops::{Div, Mul}, sync::{atomic::{AtomicBool, Ordering}, mpsc::{Receiver, Sender, TryRecvError}, Arc}, thread::{self, JoinHandle}, time::Duration};
 
-use fsd_interface::{messages::{FlightPlanMessage, PilotPositionUpdateMessage}, PilotRating, TransponderCode, TransponderMode};
+use fsd_interface::{messages::{FlightPlanMessage, PilotDeregisterMessage, PilotPositionUpdateMessage}, PilotRating, TransponderCode, TransponderMode};
 
 use crate::ui::{Message, Ui};
 
@@ -11,6 +11,9 @@ const HDG_FACTOR: f32 = 182.044444444;
 
 pub fn worker_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, preferences: Preferences, ui_link: U, mut metar_provider: MetarProvider, mut vatsim_data_provider: VatsimDataProvider, msg_sender: Sender<String>) -> JoinHandle<()> {
     thread::Builder::new().name("TrafficViewerWorkerThread".into()).spawn(move || {
+
+        let mut fsuipc_linked = false;
+        let mut last_callsign_sent = String::new();
         for i in 0..usize::MAX {
             if should_terminate.load(Ordering::Relaxed) { break };
 
@@ -36,11 +39,21 @@ pub fn worker_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, prefere
 
             let aircraft_refresh_due = i % 4 == 0;
             if aircraft_refresh_due {
-
+                if !fsuipc_linked {
+                    match fsuipc::link(None) {
+                        Ok(_) => {
+                            ui_link.dispatch_message(Message::MsfsConnected);
+                            fsuipc_linked = true;
+                        }
+                        Err(_) => {
+                            thread::sleep(Duration::from_secs(1));
+                            continue;
+                        }
+                    }
+                }
                 // Aircraft
    
                 if let Ok(aircraft_list) = fsuipc::get_aircraft(true).and_then(|ground_aircraft| fsuipc::get_aircraft(true).map(|airborne_aircraft| ground_aircraft.into_iter().chain(airborne_aircraft.into_iter()))) {
-                    ui_link.dispatch_message(Message::MsfsConnected);
                     for tcas_data in aircraft_list {
                         let callsign = CStr::from_bytes_until_nul(&tcas_data.atc_id).unwrap();
                         let callsign = match callsign.to_str() {
@@ -74,19 +87,24 @@ pub fn worker_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, prefere
                         }
                     };
                 } else {
+                    fsuipc_linked = false;
                     ui_link.dispatch_message(Message::MsfsDisconnected);
                 }
-                
 
 
             // Own aircraft
                 if let Ok(own_aircraft_data) = fsuipc::get_own_aircraft_data() {
-                    ui_link.dispatch_message(Message::MsfsConnected);
                     let my_callsign = if preferences.use_es_callsign() {
                         preferences.es_callsign()
                     } else {
                         preferences.own_callsign()
                     }.unwrap_or_else(|| String::from("ME"));
+
+                    if !last_callsign_sent.is_empty() && last_callsign_sent != my_callsign {
+                        let dc = PilotDeregisterMessage::new(&last_callsign_sent, "1000000");
+                        msg_sender.send(dc.to_string()).ok();
+                    }
+                    last_callsign_sent = my_callsign.clone();
 
                     let vatsim_details = if preferences.fetch_flight_plans() {
                         vatsim_data_provider.get_details_and_flight_plan_to_send(&my_callsign)
@@ -112,6 +130,7 @@ pub fn worker_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, prefere
                         msg_sender.send(flight_plan).ok();
                     }
                 } else {
+                    fsuipc_linked = false;
                     ui_link.dispatch_message(Message::MsfsDisconnected);
                 }
 

@@ -14,7 +14,7 @@ pub struct App<U: Ui> {
     fsd: Server,
     metar_provider: MetarProvider,
     vatsim_data_provider: VatsimDataProvider,
-    preferences: Preferences,
+    pub preferences: Preferences,
     should_terminate: Arc<AtomicBool>,
     ui_link: U
 }
