@@ -1,10 +1,10 @@
 use std::{io::{BufRead, BufReader, ErrorKind, LineWriter, Write}, net::{TcpListener, TcpStream}, sync::{atomic::{AtomicBool, Ordering}, mpsc::{self, Receiver, Sender, TryRecvError}, Arc}, thread::{self, JoinHandle}, time::Duration};
 
-use fsd_interface::{messages::{MetarResponseMessage, TextMessage}, FsdMessageType};
+use fsd_interface::{messages::{ClientQueryMessage, ClientQueryResponseMessage, FlightPlanMessage, MetarResponseMessage, TextMessage}, ClientQueryType, FsdMessageType};
 
 use crate::ui::{Message, Ui};
 
-use super::{metar::MetarProvider, vatsim::VatsimDataProvider, Preferences};
+use super::{metar::MetarProvider, vatsim::VatsimDataProvider, worker::FLIGHT_PLAN_RECIPIENT, Preferences};
 
 const SERVER_CALLSIGN: &str = "SERVER";
 const WELCOME_MESSAGE: &str = "Connected to Traffic Viewer. Welcome!";
@@ -47,8 +47,16 @@ impl Drop for Server {
 
 fn server_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, vatsim_data_provider: VatsimDataProvider, metar_provider: MetarProvider, preferences: Preferences, ui: U, receiver: Receiver<String>) -> JoinHandle<()> {
     thread::Builder::new().name("TrafficViewerFSDThread".into()).spawn(move|| {
-
-        let tcp_listener = TcpListener::bind("127.0.0.1:6809").unwrap();
+        let tcp_listener = match TcpListener::bind("127.0.0.1:6809") {
+            Ok(tcp_listener) => tcp_listener,
+            Err(_) => {
+                ui.dispatch_message(Message::FatalError(String::from("Unable to bind to localhost port 6809. Exiting.")));
+                should_terminate.store(true, Ordering::Relaxed);
+                return;
+            },
+        };
+            
+        
         while !should_terminate.load(Ordering::Relaxed) {
             tcp_listener.set_nonblocking(true).ok();
             match tcp_listener.accept() {
@@ -95,8 +103,6 @@ fn recv_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, this_connecti
     thread::Builder::new().name(String::from("TrafficViewerFSDRecvThread")).spawn(move|| {
         let mut writer = LineWriter::new(tcp_stream.try_clone().unwrap());
         let mut reader = BufReader::new(tcp_stream);
-
-        
         
         while !should_terminate.load(Ordering::Relaxed) {
             let mut buffer = Vec::with_capacity(512);
@@ -113,13 +119,36 @@ fn recv_thread<U: Ui + 'static>(should_terminate: Arc<AtomicBool>, this_connecti
                             FsdMessageType::AtcRegisterMessage(msg) => {
                                 preferences.set_es_callsign(msg.from.clone());
                                 ui.dispatch_message(Message::EuroscopeConnected(msg.from.clone()));
-                                let res = writer.write(&string_to_byte_slice(&format!("{}\r\n", TextMessage::new(SERVER_CALLSIGN, msg.from, WELCOME_MESSAGE))));
+                                writer.write(&string_to_byte_slice(&format!("{}\r\n", TextMessage::new(SERVER_CALLSIGN, msg.from, WELCOME_MESSAGE)))).ok();
                             },
                             FsdMessageType::MetarRequestMessage(msg) => {
+                                println!("METAR requested for {}", msg.station);
                                 if let Some(metar) = metar_provider.lookup_metar(&msg.station) {
-                                    writer.write(&string_to_byte_slice(&format!("{}\r\n", MetarResponseMessage::new(SERVER_CALLSIGN, msg.from, metar)))).ok();
+                                    let response = format!("{}\r\n", MetarResponseMessage::new(SERVER_CALLSIGN, msg.from, metar));
+                                    println!("Sending {}", response);
+                                    writer.write(&string_to_byte_slice(&response)).ok();
                                 }
-                            }
+                            },
+                            FsdMessageType::ClientQueryMessage(cqm) => match cqm.query_type {
+                                ClientQueryType::RealName => {
+                                    if let Some(details) = vatsim_data_provider.get_aircraft_details(&cqm.to) {
+                                        let real_name = details.name;
+                                        let message = ClientQueryResponseMessage::real_name(cqm.to, cqm.from, real_name, String::new(), 1);
+                                        let response = format!("{}\r\n", message);
+                                        writer.write(&string_to_byte_slice(&response)).ok();
+                                    }
+                                },
+                                ClientQueryType::FlightPlan(subject) => {
+                                    if let Some(flight_plan) = vatsim_data_provider.get_aircraft_details(&subject).and_then(|details| details.flight_plan).map(fsd_interface::FlightPlan::from) {
+                                        let message = FlightPlanMessage::new(cqm.from, subject, flight_plan);
+                                        let response = format!("{}\r\n", message);
+                                        writer.write(&string_to_byte_slice(&response)).ok();
+                                    }
+                                },
+                                _ => {},
+
+                            }, 
+                            
                             _ => {},
                         }
                     }

@@ -25,4 +25,6 @@ pub enum Message {
     VatsimDataRetrieved,
     VatsimDataDisconnected,
 
+    FatalError(String),
+
 }

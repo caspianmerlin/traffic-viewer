@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::{process, ptr};
 use win32_ui_impl::{util, window, Win32Ui};
 use windows_sys::{w, Win32::{System::LibraryLoader::GetModuleHandleW, UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR}}};

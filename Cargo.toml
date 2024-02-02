@@ -11,7 +11,7 @@ windows-sys = { version = "0.52.0", features = ["Win32_Foundation", "Win32_Graph
 serde = { version = "1.0.195", features = ["derive"] }
 serde_json = "1.0.111"
 ureq = { version = "2.8.0", features = ["json"] }
-fsd_interface = "0.1.20"
+fsd_interface = "0.1.21"
 
 [build-dependencies]
 embed-resource = "2.4.1"

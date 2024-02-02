@@ -19,6 +19,10 @@ impl VatsimDataProvider {
             last_update_successful: Arc::new(AtomicBool::new(false)),
         }
     }
+    pub fn get_aircraft_details(&self, callsign: &str) -> Option<Details> {
+        let lock = self.vatsim_aircraft.lock().unwrap();
+        lock.get(callsign).map(|aircraft| aircraft.details.clone())
+    }
 
     pub fn last_update_successful(&self) -> bool {
         self.last_update_successful.load(Ordering::Relaxed)
@@ -88,7 +92,7 @@ impl VatsimAircraft {
 
     fn update(&mut self, new_details: Details) {
         self.details = new_details;
-        let new_unsent_flight_plan = if let Some(new_flight_plan) = self.details.flight_plan.take() {
+        let new_unsent_flight_plan = if let Some(new_flight_plan) = self.details.flight_plan.clone() {
             match self.last_sent_flight_plan_revision_id {
                 None => Some(new_flight_plan),
                 Some(last_sent_flight_plan_revision_id) => {
@@ -111,6 +115,13 @@ impl VatsimAircraft {
         let flight_plan_to_send = self.unsent_flight_plan.take();
         self.last_sent_flight_plan_revision_id = flight_plan_to_send.as_ref().map(|fp| fp.revision_id);
         (details, flight_plan_to_send)
+    }
+
+    pub fn get_flight_plan(&self) -> Option<FlightPlan> {
+        self.details.flight_plan.clone()
+    }
+    pub fn get_details(&self) -> &Details {
+        &self.details
     }
 }
 

@@ -336,7 +336,7 @@ const FEET_PER_M: f64 = 3.28084;
 pub fn get_own_aircraft_data() -> Result<OwnAircraftData, Error> {
     let mut lat: f64 = 0.0;
     let mut lon: f64 = 0.0;
-    let mut alt_m: f64 = 0.0;
+    let mut press_alt_m: f64 = 0.0;
     let mut true_hdg_radians: f64 = 0.0;
     let mut xpdr: u16 = 0;
     let mut pressure_qnh: u16 = 0;
@@ -352,7 +352,7 @@ pub fn get_own_aircraft_data() -> Result<OwnAircraftData, Error> {
             let result: Error = mem::transmute(res);
             return Err(result);
         }
-        if FSUIPC_Read(0x6020, mem::size_of::<f64>() as u32, &mut alt_m as *mut f64 as *mut _, &mut res) != 1 {
+        if FSUIPC_Read(0x34B0, mem::size_of::<f64>() as u32, &mut press_alt_m as *mut f64 as *mut _, &mut res) != 1 {
             let result: Error = mem::transmute(res);
             return Err(result);
         }
@@ -376,7 +376,7 @@ pub fn get_own_aircraft_data() -> Result<OwnAircraftData, Error> {
             let result: Error = mem::transmute(res);
             return Err(result);
         }
-        let alt_ft = alt_m * FEET_PER_M;
+        let press_alt_ft = press_alt_m * FEET_PER_M;
         let xpdr_str = format!("{:4X}", xpdr);
 
 
@@ -384,7 +384,7 @@ pub fn get_own_aircraft_data() -> Result<OwnAircraftData, Error> {
             OwnAircraftData {
                 lat,
                 lon,
-                alt: alt_ft,
+                pressure_alt: press_alt_ft,
                 true_hdg: true_hdg_radians.to_degrees(),
                 gs: gs_m_per_s * KNOTS_PER_M_PER_S,
                 local_qnh_in_hg: (pressure_qnh as f64 / 16.0) * 0.02952998057,
@@ -398,7 +398,7 @@ pub fn get_own_aircraft_data() -> Result<OwnAircraftData, Error> {
 pub struct OwnAircraftData {
     pub lat: f64,
     pub lon: f64,
-    pub alt: f64,
+    pub pressure_alt: f64,
     pub true_hdg: f64,
     pub gs: f64,
     pub local_qnh_in_hg: f64,

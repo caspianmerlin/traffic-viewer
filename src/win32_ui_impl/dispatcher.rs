@@ -33,6 +33,11 @@ impl Ui for MessageDispatcher {
             Message::MetarNotFound => UiMessage::MetarNotFound,
             Message::VatsimDataRetrieved => UiMessage::VatsimDataRetrieved,
             Message::VatsimDataDisconnected => UiMessage::VatsimDataDisconnected,
+
+            Message::FatalError(string) => {
+                lparam = Box::into_raw(Box::new(string)) as isize;
+                UiMessage::FatalError
+            },
         } as usize;
         unsafe {
             PostMessageW(self.hwnd, UI_MESSAGE, wparam, lparam);
@@ -59,6 +64,8 @@ pub enum UiMessage {
 
     VatsimDataRetrieved,
     VatsimDataDisconnected,
+
+    FatalError,
 }
 // Euroscope connected
 // 
